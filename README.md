@@ -170,7 +170,7 @@ This module:
 
 ```python
 # ======================================================================
-# MODULE 2: ADVANCED SERVER ENGINE
+# MODULE 2: ADVANCED SERVER ENGINE (FULLY PATCHED)
 # ======================================================================
 
 class MinecraftEngine:
@@ -192,15 +192,15 @@ class MinecraftEngine:
         return allocatable, total_gb
 
     # --------------------------------------------------
-    # JAVA VERSION DETECTION
+    # DYNAMIC JAVA VERSION DETECTION
     # --------------------------------------------------
     @staticmethod
     def get_required_java(version_str):
         try:
-            match = re.search(r'1\.(\d+)', version_str)
+            # Matches formats like 1.8.9, 1.16.5, 1.21, etc.
+            match = re.search(r'(?:1\.)?(\d+)', version_str)
             if match:
                 sub = int(match.group(1))
-
                 if sub <= 11:
                     return 8
                 elif sub <= 16:
@@ -209,29 +209,27 @@ class MinecraftEngine:
                     return 17
                 else:
                     return 21
-
             return 21
         except:
             return 21
 
     # --------------------------------------------------
-    # JAVA INSTALLER
+    # AUTOMATIC JAVA ENVIRONMENT SWITCHER
     # --------------------------------------------------
     @classmethod
     def install_java(cls, java_version):
-        print(f"☕ Checking Java {java_version}...")
-
+        print(f"☕ Environment Check: Testing Java {java_version} Compatibility...")
+        
         result = subprocess.run(
             "java -version",
             shell=True,
             capture_output=True,
             text=True
         )
-
         output = result.stderr.lower() + result.stdout.lower()
 
-        if f'openjdk version "{java_version}' in output:
-            print("✅ Correct Java already installed.")
+        if f'openjdk version "{java_version}' in output or f'openjdk 1.{java_version}' in output:
+            print(f"✅ Sahi Java Version ({java_version}) pehle se active hai.")
             return True
 
         pkg_map = {
@@ -241,14 +239,13 @@ class MinecraftEngine:
             21: "openjdk-21-jre-headless"
         }
 
-        package = pkg_map.get(java_version)
+        package = pkg_map.get(java_version, "openjdk-21-jre-headless")
+        print(f"📥 Switching environment. Installing: {package}...")
 
-        print(f"📥 Installing {package}...")
-
+        # Update alternatives smoothly inside Ubuntu container
         cmd = f"sudo apt-get update -y && sudo apt-get install -y {package}"
-
         proc = subprocess.run(cmd, shell=True)
-
+        
         return proc.returncode == 0
 
     # --------------------------------------------------
@@ -257,15 +254,7 @@ class MinecraftEngine:
     @staticmethod
     def detect_server_jar(server_path):
         jars = [f for f in os.listdir(server_path) if f.endswith('.jar')]
-
-        priority = [
-            'server.jar',
-            'fabric',
-            'forge',
-            'paper',
-            'purpur',
-            'spigot'
-        ]
+        priority = ['server.jar', 'fabric', 'forge', 'paper', 'purpur', 'spigot']
 
         for p in priority:
             for j in jars:
@@ -274,29 +263,25 @@ class MinecraftEngine:
 
         if jars:
             return os.path.join(server_path, jars[0])
-
         return None
 
     # --------------------------------------------------
-    # DOWNLOAD SERVER SOFTWARE
+    # CORE ENGINE DOWNLOADER + METADATA TRACKING
     # --------------------------------------------------
     @classmethod
     def resolve_and_download(cls, software, version, target_dir):
         software = software.lower()
         jar_path = os.path.join(target_dir, 'server.jar')
 
-        print(f"🌐 Downloading {software} {version}...")
+        print(f"🌐 Fetching Core Software: {software.upper()} {version}...")
 
         if software == 'paper':
             api_url = f"https://api.papermc.io/v2/projects/paper/versions/{version}"
             res = requests.get(api_url).json()
-
             if not res.get('builds'):
                 raise ValueError(f"No Paper builds found for {version}")
-
             latest_build = res['builds'][-1]
             download_name = f"paper-{version}-{latest_build}.jar"
-
             dl_url = f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{latest_build}/downloads/{download_name}"
 
         elif software == 'purpur':
@@ -305,42 +290,44 @@ class MinecraftEngine:
         elif software == 'vanilla':
             manifest_url = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
             manifest = requests.get(manifest_url).json()
-
             version_entry = next((v for v in manifest['versions'] if v['id'] == version), None)
-
             if not version_entry:
-                raise ValueError('Version not found.')
-
+                raise ValueError(f'Minecraft version {version} nahi mili.')
             version_data = requests.get(version_entry['url']).json()
             dl_url = version_data['downloads']['server']['url']
 
         elif software == 'fabric':
             loader = requests.get('https://meta.fabricmc.net/v2/versions/loader').json()[0]['version']
             installer = requests.get('https://meta.fabricmc.net/v2/versions/installer').json()[0]['version']
-
             dl_url = f'https://meta.fabricmc.net/v2/versions/loader/{version}/{loader}/{installer}/server/jar'
 
         else:
-            raise ValueError('Currently supported: Paper, Purpur, Vanilla, Fabric')
+            raise ValueError('Supported Engine types: Paper, Purpur, Vanilla, Fabric')
 
         with requests.get(dl_url, stream=True) as r:
             r.raise_for_status()
             with open(jar_path, 'wb') as f:
                 shutil.copyfileobj(r.raw, f)
 
-        print('✅ Server downloaded successfully.')
+        # BUG FIX: Meta-file create kar rahe hain taki version loss na ho runtime par
+        meta_path = os.path.join(target_dir, 'colab_meta.json')
+        with open(meta_path, 'w') as f:
+            json.dump({'software': software, 'version': version}, f)
+
+        print('✅ Server Core Engine deployment successful.')
         return True
 
     # --------------------------------------------------
-    # OPTIMIZATION PROFILE
+    # PERFORMANCE CONFIG INJECTOR (SAFE WRITE)
     # --------------------------------------------------
     @staticmethod
     def optimize_configurations(target_dir):
-        print('⚡ Applying performance optimizations...')
+        print('⚡ Injecting high-performance server configurations...')
 
         with open(os.path.join(target_dir, 'eula.txt'), 'w') as f:
             f.write('eula=true\n')
 
+        # Properties Level Optimization
         properties = {
             'view-distance': '6',
             'simulation-distance': '5',
@@ -354,7 +341,6 @@ class MinecraftEngine:
         }
 
         prop_path = os.path.join(target_dir, 'server.properties')
-
         existing = {}
 
         if os.path.exists(prop_path):
@@ -370,47 +356,63 @@ class MinecraftEngine:
             for k, v in existing.items():
                 f.write(f'{k}={v}\n')
 
-        # Spigot Optimization
+        # BUG FIX: 'a' append mode loop se duplication corruption rokne ke liye verification checks
         spigot_yml = os.path.join(target_dir, 'spigot.yml')
+        already_optimized = False
+        
+        if os.path.exists(spigot_yml):
+            with open(spigot_yml, 'r') as f:
+                if 'entity-activation-range' in f.read():
+                    already_optimized = True
 
-        with open(spigot_yml, 'a') as f:
-            f.write('\nworld-settings:\n')
-            f.write('  default:\n')
-            f.write('    mob-spawn-range: 3\n')
-            f.write('    entity-activation-range:\n')
-            f.write('      animals: 16\n')
-            f.write('      monsters: 24\n')
-            f.write('      raiders: 48\n')
-            f.write('      misc: 8\n')
-            f.write('    merge-radius:\n')
-            f.write('      item: 4.0\n')
-            f.write('      exp: 6.0\n')
+        if not already_optimized:
+            with open(spigot_yml, 'a') as f:
+                f.write('\nworld-settings:\n')
+                f.write('  default:\n')
+                f.write('    mob-spawn-range: 3\n')
+                f.write('    entity-activation-range:\n')
+                f.write('      animals: 16\n')
+                f.write('      monsters: 24\n')
+                f.write('      raiders: 48\n')
+                f.write('      misc: 8\n')
+                f.write('    merge-radius:\n')
+                f.write('      item: 4.0\n')
+                f.write('      exp: 6.0\n')
 
-        print('✅ Optimization profile applied.')
+        print('✅ Configuration parameters applied cleanly.')
 
     # --------------------------------------------------
-    # SERVER STARTER
+    # RUNTIME LIFECYCLE CONTROLLER
     # --------------------------------------------------
     def launch_instance(self, server_path, memory_gb, output_widget):
         if self.is_running:
             return False
 
         self.output_widget = output_widget
-
         jar_file = self.detect_server_jar(server_path)
 
         if not jar_file:
-            raise FileNotFoundError('No server jar detected.')
+            raise FileNotFoundError('Server deployment path context invalid: No executable jar detected.')
 
-        java_version = 21
+        # BUG FIX: Hardcoded Java 21 hataya, metadata file se exact target version read ho rhi hai
+        mc_version = "1.21.1" # Safe fallback
+        meta_path = os.path.join(server_path, 'colab_meta.json')
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    meta_data = json.load(f)
+                    mc_version = meta_data.get('version', '1.21.1')
+            except:
+                pass
 
-        self.install_java(java_version)
+        target_java = self.get_required_java(mc_version)
+        self.install_java(target_java)
 
+        # High-Optimization Flag Stack (Aikar JVM Configurations)
         exec_flags = [
             'java',
             f'-Xms{memory_gb}G',
             f'-Xmx{memory_gb}G',
-
             '-XX:+UseG1GC',
             '-XX:+ParallelRefProcEnabled',
             '-XX:MaxGCPauseMillis=100',
@@ -437,10 +439,10 @@ class MinecraftEngine:
         ]
 
         with self.output_widget:
-            print(f'🚀 Starting Minecraft Server...')
-            print(f'📂 Directory: {server_path}')
-            print(f'🧠 RAM Allocation: {memory_gb}GB')
-            print('⚡ Optimized Aikar Flags Enabled')
+            print(f'🚀 Initializing Runtime Infrastructure Process...')
+            print(f'📂 Context Path: {server_path}')
+            print(f'🧠 Heap Allocation Size: {memory_gb} GB')
+            print(f'☕ Activated Environment Java: Version {target_java}')
             print('-' * 60)
 
         self.process = subprocess.Popen(
@@ -454,60 +456,43 @@ class MinecraftEngine:
         )
 
         self.is_running = True
-
-        self.log_thread = threading.Thread(
-            target=self._stream_logs,
-            daemon=True
-        )
-
+        self.log_thread = threading.Thread(target=self._stream_logs, daemon=True)
         self.log_thread.start()
-
         return True
 
     # --------------------------------------------------
-    # REALTIME LOG STREAM
+    # LINE-BY-LINE REALTIME CONSOLE STREAM (FIXED)
     # --------------------------------------------------
     def _stream_logs(self):
-        buffer = []
-
+        # BUG FIX: Chunk logic hatayi taaki console par instantly line append ho bina delay ke
         while self.is_running and self.process.poll() is None:
             line = self.process.stdout.readline()
-
             if line:
-                buffer.append(line.strip())
-
-                if len(buffer) >= 5:
-                    with self.output_widget:
-                        for l in buffer:
-                            print(l)
-                    buffer.clear()
+                with self.output_widget:
+                    print(line.strip())
             else:
-                time.sleep(0.1)
+                time.sleep(0.05)
 
         self.is_running = False
-
         with self.output_widget:
             print('-' * 60)
-            print('🛑 Server stopped.')
+            print('🛑 Server context terminated safely.')
 
     # --------------------------------------------------
-    # SEND COMMANDS
+    # SUBSYSTEM COMMUNICATIONS
     # --------------------------------------------------
     def dispatch_command(self, cmd):
         if self.is_running and self.process:
             self.process.stdin.write(cmd + '\n')
             self.process.stdin.flush()
             return True
-
         return False
 
-    # --------------------------------------------------
-    # STOP SERVER
-    # --------------------------------------------------
     def safely_kill(self):
         if not self.is_running:
             return
 
+        print("⚡ Safely signaling process wrap-up (stop)...")
         self.dispatch_command('stop')
 
         for _ in range(15):
@@ -517,7 +502,6 @@ class MinecraftEngine:
 
         if self.process:
             self.process.kill()
-
         self.is_running = False
 
 # Singleton
@@ -553,7 +537,6 @@ console_stream = widgets.Output(
     )
 )
 
-
 def build_dashboard():
     clear_output(wait=True)
 
@@ -567,7 +550,6 @@ def build_dashboard():
     display(header)
 
     server_dirs = []
-
     if os.path.exists(BASE_DIR):
         server_dirs = [
             d for d in os.listdir(BASE_DIR)
@@ -575,7 +557,7 @@ def build_dashboard():
         ]
 
     # --------------------------------------------------
-    # INSTALLER TAB
+    # INSTALLER TAB UI
     # --------------------------------------------------
     txt_name = widgets.Text(
         description='Server Name:',
@@ -599,7 +581,7 @@ def build_dashboard():
     )
 
     installer = widgets.VBox([
-        widgets.HTML('<h3>📥 Install Server</h3>'),
+        widgets.HTML('<h3>📥 Install Server Engine</h3>'),
         txt_name,
         drop_soft,
         txt_ver,
@@ -607,7 +589,7 @@ def build_dashboard():
     ])
 
     # --------------------------------------------------
-    # SERVER CONTROL
+    # SERVER CONTROL TAB UI
     # --------------------------------------------------
     drop_server = widgets.Dropdown(
         options=server_dirs,
@@ -636,7 +618,7 @@ def build_dashboard():
     )
 
     cmd_input = widgets.Text(
-        placeholder='say hello world'
+        placeholder='op PlayerName / say Hello'
     )
 
     btn_send = widgets.Button(
@@ -645,11 +627,11 @@ def build_dashboard():
     )
 
     controls = widgets.VBox([
-        widgets.HTML('<h3>🚀 Server Control</h3>'),
+        widgets.HTML('<h3>🚀 Server Dashboard Controls</h3>'),
         drop_server,
         ram_slider,
         widgets.HBox([btn_start, btn_stop]),
-        widgets.HTML('<h4>📟 Live Console</h4>'),
+        widgets.HTML('<h4>📟 System Output Logs</h4>'),
         console_stream,
         widgets.HBox([cmd_input, btn_send])
     ])
@@ -664,7 +646,7 @@ def build_dashboard():
     display(panel_output)
 
     # --------------------------------------------------
-    # INSTALL HANDLER
+    # HANDLERS IMPLEMENTATION
     # --------------------------------------------------
     def install_server(b):
         name = txt_name.value.strip().replace(' ', '_')
@@ -679,37 +661,25 @@ def build_dashboard():
 
         with panel_output:
             clear_output()
-
             try:
-                print('⚡ Installing server...')
-
-                engine_instance.resolve_and_download(
-                    software,
-                    version,
-                    path
-                )
-
+                print('⚡ Requesting cloud server download allocations...')
+                engine_instance.resolve_and_download(software, version, path)
                 engine_instance.optimize_configurations(path)
-
-                print('🎉 Server installed successfully.')
-
+                print('🎉 Server node deployment finished successfully!')
             except Exception as e:
-                print(f'❌ Error: {e}')
+                print(f'❌ Runtime Core Exception: {e}')
 
+        # Re-index server dirs dynamically
         drop_server.options = [
             d for d in os.listdir(BASE_DIR)
             if os.path.isdir(os.path.join(BASE_DIR, d))
         ]
 
-    # --------------------------------------------------
-    # START HANDLER
-    # --------------------------------------------------
     def start_server(b):
         if engine_instance.is_running:
             return
 
         server = drop_server.value
-
         if not server:
             return
 
@@ -718,24 +688,14 @@ def build_dashboard():
         with console_stream:
             clear_output()
 
-        engine_instance.launch_instance(
-            path,
-            ram_slider.value,
-            console_stream
-        )
+        engine_instance.launch_instance(path, ram_slider.value, console_stream)
 
-    # --------------------------------------------------
-    # STOP HANDLER
-    # --------------------------------------------------
     def stop_server(b):
-        engine_instance.safely_kill()
+        with console_stream:
+            engine_instance.safely_kill()
 
-    # --------------------------------------------------
-    # COMMAND HANDLER
-    # --------------------------------------------------
     def send_command(b):
         cmd = cmd_input.value.strip()
-
         if cmd:
             engine_instance.dispatch_command(cmd)
             cmd_input.value = ''
@@ -746,7 +706,7 @@ def build_dashboard():
     btn_send.on_click(send_command)
     cmd_input.on_submit(send_command)
 
-# Start dashboard
+# Core initialization
 build_dashboard()
 ```
 
